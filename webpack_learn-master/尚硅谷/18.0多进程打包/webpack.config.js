@@ -1,0 +1,142 @@
+const path = require("path");
+const HtmlWebpackPlugin = require("html-webpack-plugin"); //html模板
+const MiNiCssExtractPlugin = require("mini-css-extract-plugin"); //提取出css
+const OptimizeCssAssetsWebpackPlugin = require("optimize-css-assets-webpack-plugin"); //压缩css
+const workboxWebpackPlugin = require("workbox-webpack-plugin"); //使用pwa
+process.env.NODE_ENV = "production";
+//复用css的loader
+let commonCssLoader = [
+  {
+    loader: MiNiCssExtractPlugin.loader,
+    options: {
+      publicPath: "../", //避免css中的路径引入错误
+    },
+  }, //代替style标签而是引入css的形式
+  "css-loader",
+  {
+    //把css压缩
+    loader: "postcss-loader",
+    options: {
+      //配置package.json的"browserslist"
+      ident: "postcss",
+      plugins: () => [require("postcss-preset-env")()],
+    },
+  },
+];
+//pwa渐进式web应用（主要是离线可以访问
+//workbox->workbox-webpack-plugin
+module.exports = {
+  mode: "production", //生产模式
+  entry: "./src/js/index.js",
+  output: {
+    filename: "built.[contenthash:10].js",
+    path: path.resolve(__dirname, "build"),
+  },
+  module: {
+    rules: [
+      //css\less
+      {
+        test: /\.css$/,
+        use: [...commonCssLoader],
+      },
+      {
+        test: /\.less$/,
+        use: [...commonCssLoader, "less-loader"],
+      },
+      // //js先eslint再babel
+      // //eslint检查
+      // {
+      //   //package.json配置"eslintConfig"
+      //   test: /\.js$/,
+      //   exclude: /node_modules/,
+      //   enforce:'pre',//js优先执行eslint
+      //   loader: "eslint-loader",
+      //   options: {
+      //     fix: true, //规范自动修复
+      //   },
+      // },
+      //js兼容处理
+      {
+        test: /\.js$/,
+        exclude: /node_modules/,
+        use: [
+          {
+            //开启多进程打包
+            //进程启动大概为600ms,进程通信也有开销
+            //工作消耗长才需要多进程打包，在代码少的时候反而不应该使用
+            loader: "thread-loader",
+            options: {
+              workers: 2, //进程数
+            },
+          },
+          {
+            loader: "babel-loader",
+            options: {
+              presets: [
+                [
+                  "@babel/preset-env",
+                  {
+                    useBuiltIns: "usage", //按需加载
+                    corejs: {
+                      version: 3, //制定core-js版本
+                    },
+                    targets: {
+                      //制定兼容的目标
+                      chrome: "60",
+                      firefox: "60",
+                      ie: "9",
+                      safari: "10",
+                      edge: "17",
+                    },
+                  },
+                ],
+              ],
+              cacheDirectory: true, //开启babel缓存
+            },
+          },
+        ],
+      },
+      {
+        test: /\.(jpg|png|gif)$/,
+        loader: "url-loader",
+        options: {
+          limit: 8 * 1024,
+          name: "[contenthash:10].[ext]",
+          outputPath: "imgs",
+          esMoudle: false,
+        },
+      },
+      {
+        test: /\.html$/,
+        loader: "html-loader",
+      },
+      {
+        exclude: /\.(js|html|css|less|json|jpg|png|gif)$/,
+        loader: "file-loader",
+        options: {
+          outputPath: "media",
+        },
+      },
+    ],
+  },
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: "./src/index.html", //引用html模板
+      minify: {
+        //压缩html
+        collapseInlineTagWhitespace: true,
+        removeComments: true,
+      },
+    }),
+    new MiNiCssExtractPlugin({
+      filename: "css/built.[contenthash:10].css", //设置css的输出
+    }),
+    new OptimizeCssAssetsWebpackPlugin(), //压缩css的插件
+    new workboxWebpackPlugin.GenerateSW({
+      //帮助替换旧的serviceWorke文件，帮助快速启动
+      //去入口js中做配置
+      clientsClaim: true,
+      skipWaiting: true,
+    }),
+  ],
+};
